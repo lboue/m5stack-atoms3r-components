@@ -17,9 +17,12 @@ substitutions:
 external_components:
   - source: components
 
-# sensor:
-#   - platform: m5stack_button_sensor
-#     name: Button State Number
+sensor:
+  - platform: m5stack_button_compound_sensor
+    m5stack_button_sensor_number:
+      name: Button State Number
+    m5stack_button_sensor_text:
+      name: Button State Text
 
 # text_sensor:
 #   - platform: m5stack_button_text_sensor
