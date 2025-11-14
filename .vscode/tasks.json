@@ -1,0 +1,88 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "env": {
+         "COM_PORT": "COM5"
+    }
+  },
+  "tasks": [
+    {
+      "label": "Run",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "run",
+        ".\\m5stack-atom-s3r.factory.yaml",
+        "--device",
+        "$env:COM_PORT"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Upload",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "upload",
+        ".\\m5stack-atom-s3r.factory.yaml",
+        "--device",
+        "$env:COM_PORT"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Compile",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "compile",
+        ".\\m5stack-atom-s3r.factory.yaml"
+      ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build"
+      }
+    },
+    {
+      "label": "Compile & Upload",
+      "type": "shell",
+      "dependsOn": [
+        "Compile"
+      ],
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "upload",
+        ".\\m5stack-atom-s3r.factory.yaml",
+        "--device",
+        "$env:COM_PORT"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Logs",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "logs",
+        ".\\m5stack-atom-s3r.factory.yaml",
+        "--device",
+        "$env:COM_PORT"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Config",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "config",
+        ".\\m5stack-atom-s3r.factory.yaml"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

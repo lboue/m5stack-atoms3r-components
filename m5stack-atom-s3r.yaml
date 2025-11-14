@@ -1,0 +1,134 @@
+packages:
+  device_base: !include .defaults.yaml
+
+# For M5Stack AtomS3R datasheet check product page at https://docs.m5stack.com/en/core/AtomS3R
+esphome:
+  friendly_name: M5Stack AtomS3R
+  name: m5stack-atom-s3r
+
+substitutions:
+  # https://esphome.io/guides/configuration-types.html#substitutions
+  device_name: m5stack-atom-s3r            # hostname & entity_id
+  name_add_mac_suffix: "false"             # append MAC address to device_name
+  friendly_name: Homeassistant Display     # Displayed in HA frontend
+  board: esp32-s3-devkitc-1                # ESP32 board
+  framework_type: arduino                  # ESP32 framework
+
+external_components:
+  - source: components
+
+# sensor:
+#   - platform: m5stack_button_sensor
+#     name: Button State Number
+
+# text_sensor:
+#   - platform: m5stack_button_text_sensor
+#     name: Button State Text
+
+### Specfic instructions for the M5Stack AtomS3R board
+
+# sensor:
+#   - platform: m5stack_imu_sensor
+#     update_interval: 5s
+#     acceleration_x:
+#       name: "IMU Accel X"
+#     acceleration_y:
+#       name: "IMU Accel Y"
+#     acceleration_z:
+#       name: "IMU Accel z"
+#     gyroscope_x:
+#       name: "IMU Gyro X"
+#     gyroscope_y:
+#       name: "IMU Gyro Y"
+#     gyroscope_z:
+#       name: "IMU Gyro z"
+#     field_strength_x:
+#       name: "IMU Mag X"
+#     field_strength_y:
+#       name: "IMU Mag Y"
+#     field_strength_z:
+#       name: "IMU Mag z"
+#     temperature:
+#       name: "IMU Temperature"
+
+#G41 = Button
+binary_sensor:
+  - platform: gpio
+    name: Button
+    pin:
+      number: 41
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_off: 10ms
+    on_press:
+      then:
+        - logger.log: binary_sensor button pressed
+    on_double_click:
+      then:
+        - logger.log: binary_sensor button double clicked
+    on_multi_click:
+      - timing:
+        - ON for at least 1s
+        then:
+          - logger.log: binary_sensor button hold
+
+# I2C Addresses:
+#   0x30 = LP5562 / Display Backlight
+#   0x68 = BMI270 / IMU
+i2c:
+  sda: 45
+  scl: 0
+
+light:
+  - platform: monochromatic
+    output: displaybacklightoutput
+    initial_state:
+      state: true
+    restore_mode: ALWAYS_ON
+    name: M5Stack Display Backlight
+    id: displaybacklight
+    icon: mdi:television-ambient-light
+
+output:
+  - platform: m5stack_display_backlight_output
+    id: displaybacklightoutput
+
+spi:
+  clk_pin: 15
+  mosi_pin: 21
+
+display:
+  - platform: ili9xxx
+    model: st7789v
+    id: display_tft
+    dimensions:
+      height: 128
+      width: 128
+      offset_height: 1
+      offset_width: 2
+    cs_pin: 14
+    dc_pin: 42
+    reset_pin: 48
+    invert_colors: true   # black bg, white text
+    rotation: 180         # 180 = cable is bottom
+    lambda: |-
+      it.strftime(64, 0, id(font_default), id(my_red), TextAlign::TOP_CENTER, "%H:%M", id(ha_time).now());
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_default
+    size: 36
+
+color:
+  - id: my_red
+    red: 100%
+    green: 20%
+    blue: 25%
+    white: 0%
+
+time:
+  platform: homeassistant
+  id: ha_time
