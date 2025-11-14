@@ -5,9 +5,9 @@
 #include "esphome/components/i2c/i2c.h"
 
 namespace esphome {
-namespace m5stack_bmi270_sensor {
+namespace bmi270 {
 
-class M5StackBMI270Sensor : public PollingComponent, public i2c::I2CDevice {
+class BMI270Component : public PollingComponent, public i2c::I2CDevice {
  public:
   void setup() override;
   void dump_config() override;
@@ -19,10 +19,10 @@ class M5StackBMI270Sensor : public PollingComponent, public i2c::I2CDevice {
   void set_accel_x_sensor(sensor::Sensor *accel_x_sensor) { accel_x_sensor_ = accel_x_sensor; }
   void set_accel_y_sensor(sensor::Sensor *accel_y_sensor) { accel_y_sensor_ = accel_y_sensor; }
   void set_accel_z_sensor(sensor::Sensor *accel_z_sensor) { accel_z_sensor_ = accel_z_sensor; }
-  void set_temperature_sensor(sensor::Sensor *temperature_sensor) { temperature_sensor_ = temperature_sensor; }
   void set_gyro_x_sensor(sensor::Sensor *gyro_x_sensor) { gyro_x_sensor_ = gyro_x_sensor; }
   void set_gyro_y_sensor(sensor::Sensor *gyro_y_sensor) { gyro_y_sensor_ = gyro_y_sensor; }
   void set_gyro_z_sensor(sensor::Sensor *gyro_z_sensor) { gyro_z_sensor_ = gyro_z_sensor; }
+  void set_temperature_sensor(sensor::Sensor *temperature_sensor) { temperature_sensor_ = temperature_sensor; }
 
  protected:
   sensor::Sensor *accel_x_sensor_{nullptr};
@@ -40,5 +40,5 @@ class M5StackBMI270Sensor : public PollingComponent, public i2c::I2CDevice {
   i2c::ErrorCode read_le_int16_(uint8_t reg, int16_t *value, uint8_t len);
 };
 
-}  // namespace m5stack_imu_sensor
+}  // namespace bmi270
 }  // namespace esphome

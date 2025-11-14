@@ -25,9 +25,9 @@ from esphome.const import (
 
 DEPENDENCIES = ["i2c"]
 
-m5stack_bmi270_sensor_ns = cg.esphome_ns.namespace("m5stack_bmi270_sensor")
-M5StackBMI270Sensor = m5stack_bmi270_sensor_ns.class_(
-    "M5StackIMUSensor", cg.PollingComponent, i2c.I2CDevice
+bmi270_sensor_ns = cg.esphome_ns.namespace("bmi270_sensor")
+BMI270Sensor = bmi270_sensor_ns.class_(
+    "BMI270Sensor", cg.PollingComponent, i2c.I2CDevice
 )
 
 accel_schema = {
@@ -44,7 +44,7 @@ gyro_schema = {
 CONFIG_SCHEMA = (
     cv.Schema(
         {
-            cv.GenerateID(): cv.declare_id(M5StackBMI270Sensor),
+            cv.GenerateID(): cv.declare_id(BMI270Sensor),
             cv.Optional(CONF_ACCELERATION_X): sensor.sensor_schema(
                 icon=ICON_ACCELERATION_X,
                 **accel_schema,
