@@ -2,6 +2,20 @@
 
 ESPHome components for the M5Stack AtomS3R
 
+## esphome Configuration
+You will need to create a `secrets.yaml` file with the following content, to be able to use esphome CLI:
+```
+wifi_ssid:     <your wifi ssid>
+wifi_password: <your wifi password>
+
+wifi_ap_name:     <your ap name>
+wifi_ap_password: <your ap password>
+
+homeassistant_api_key: <HomeAssistant generated API key>
+
+ota_password: <your OTA password>
+```
+
 ## Visual Studio Code Setup
 
 Run the `setup.bat` to set up a local virtual python environment to run the `esphome.exe` in. Afterwards you can either run `esphome` commands manually via Terminal/Shell, e.g. `esphome config .\m5stack-atom-s3r.yaml`, or you can make use of the pre-configured Visual Studio tasks (<kbd>CTRL</kbd>+<kbd>SHIFT</kbd>+<kbd>P</kbd>, Tasks: Run Task).

@@ -29,8 +29,13 @@ api:
 # https://esphome.io/components/logger
 logger:
 
+http_request:
+  verify_ssl: false
+
 # https://esphome.io/components/ota
 ota:
   - platform: esphome
     id: ota_esphome
     password: !secret ota_password
+  - platform: http_request
+    id: ota_http_request

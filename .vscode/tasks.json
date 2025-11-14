@@ -12,7 +12,7 @@
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "run",
-        ".\\m5stack-atom-s3r.factory.yaml",
+        ".\\m5stack-atom-s3r.yaml",
         "--device",
         "$env:COM_PORT"
       ],
@@ -24,7 +24,7 @@
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "upload",
-        ".\\m5stack-atom-s3r.factory.yaml",
+        ".\\m5stack-atom-s3r.yaml",
         "--device",
         "$env:COM_PORT"
       ],
@@ -36,7 +36,7 @@
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "compile",
-        ".\\m5stack-atom-s3r.factory.yaml"
+        ".\\m5stack-atom-s3r.yaml"
       ],
       "problemMatcher": [],
       "group": {
@@ -52,7 +52,7 @@
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "upload",
-        ".\\m5stack-atom-s3r.factory.yaml",
+        ".\\m5stack-atom-s3r.yaml",
         "--device",
         "$env:COM_PORT"
       ],
@@ -68,7 +68,7 @@
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "logs",
-        ".\\m5stack-atom-s3r.factory.yaml",
+        ".\\m5stack-atom-s3r.yaml",
         "--device",
         "$env:COM_PORT"
       ],
@@ -80,7 +80,7 @@
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "config",
-        ".\\m5stack-atom-s3r.factory.yaml"
+        ".\\m5stack-atom-s3r.yaml"
       ],
       "problemMatcher": []
     }

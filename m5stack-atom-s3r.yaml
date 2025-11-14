@@ -2,17 +2,20 @@ packages:
   device_base: !include .defaults.yaml
 
 # For M5Stack AtomS3R datasheet check product page at https://docs.m5stack.com/en/core/AtomS3R
-esphome:
-  friendly_name: M5Stack AtomS3R
-  name: m5stack-atom-s3r
-
 substitutions:
   # https://esphome.io/guides/configuration-types.html#substitutions
   device_name: m5stack-atom-s3r            # hostname & entity_id
   name_add_mac_suffix: "false"             # append MAC address to device_name
-  friendly_name: Homeassistant Display     # Displayed in HA frontend
+  friendly_name: M5Stack AtomS3R           # Displayed in HA frontend
   board: esp32-s3-devkitc-1                # ESP32 board
   framework_type: arduino                  # ESP32 framework
+
+esphome:
+  project:
+    name: esphome.m5stack-atom-s3r
+    version: dev
+  libraries:
+    - M5Unified=https://github.com/m5stack/M5Unified#0.2.4
 
 external_components:
   - source: components
@@ -23,6 +26,9 @@ sensor:
       name: Button State Number
     m5stack_button_sensor_text:
       name: Button State Text
+  - platform: bmi270
+    acceleration_x:
+      name: "BMI270 Accel X"
 
 # text_sensor:
 #   - platform: m5stack_button_text_sensor
