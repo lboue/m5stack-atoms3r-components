@@ -54,3 +54,47 @@ sensor:
     #  name: "IMU Temperature"
 ```
 
+## Tab5
+
+[Tab5](https://docs.m5stack.com/en/core/Tab5)
+
+**Config**
+
+```yaml
+external_components:
+    # https://github.com/DennisGaida/m5stack-atoms3r-components/tree/main
+  - source: github://DennisGaida/m5stack-atoms3r-components@main
+    components: [ bmi270_bmm150 ]
+    refresh: always
+
+i2c:
+  - id: bsp_bus
+    sda: GPIO31
+    scl: GPIO32
+    frequency: 400kHz
+
+sensor:
+  #- platform: m5stack_imu_sensor
+  - platform: bmi270_bmm150
+    update_interval: 5s
+    acceleration_x:
+      name: "IMU Accel X"
+    acceleration_y:
+      name: "IMU Accel Y"
+    acceleration_z:
+      name: "IMU Accel z"
+    gyroscope_x:
+      name: "IMU Gyro X"
+    gyroscope_y:
+      name: "IMU Gyro Y"
+    gyroscope_z:
+      name: "IMU Gyro z"
+    field_strength_x:
+      name: "IMU Mag X"
+    field_strength_y:
+      name: "IMU Mag Y"
+    field_strength_z:
+      name: "IMU Mag z"
+    #temperature:
+    #  name: "IMU Temperature"
+```
