@@ -23,9 +23,9 @@ from esphome.const import (
     UNIT_CELSIUS,
 )
 
-DEPENDENCIES = ["i2c"]
+DEPENDENCIES = ["i2c", "sensor"]
 
-bmi270_sensor_ns = cg.esphome_ns.namespace("bmi270_sensor")
+bmi270_sensor_ns = cg.esphome_ns.namespace("bmi270")
 BMI270Sensor = bmi270_sensor_ns.class_(
     "BMI270Sensor", cg.PollingComponent, i2c.I2CDevice
 )
@@ -88,15 +88,23 @@ async def to_code(config):
     await i2c.register_i2c_device(var, config)
 
     for d in ["x", "y", "z"]:
-        accel_key = f"acceleration_{d}"
-        if accel_key in config:
-            sens = await sensor.new_sensor(config[accel_key])
+        key = f"acceleration_{d}"
+        if key in config:
+            sens = await sensor.new_sensor(config[key])
             cg.add(getattr(var, f"set_accel_{d}_sensor")(sens))
-        accel_key = f"gyroscope_{d}"
-        if accel_key in config:
-            sens = await sensor.new_sensor(config[accel_key])
+        key = f"gyroscope_{d}"
+        if key in config:
+            sens = await sensor.new_sensor(config[key])
             cg.add(getattr(var, f"set_gyro_{d}_sensor")(sens))
 
     if CONF_TEMPERATURE in config:
         sens = await sensor.new_sensor(config[CONF_TEMPERATURE])
         cg.add(var.set_temperature_sensor(sens))
+
+    # cg.add_build_flag("-Ibmi270-sensor-api")
+
+    # cg.add_library(
+    #     "BMI270 Sensor API",
+    #     None,
+    #     f"https://github.com/DennisGaida/BMI270_SensorAPI.git",
+    # )
