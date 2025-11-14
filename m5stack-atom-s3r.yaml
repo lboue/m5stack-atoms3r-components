@@ -10,25 +10,58 @@ substitutions:
   board: esp32-s3-devkitc-1                # ESP32 board
   framework_type: arduino                  # ESP32 framework
 
+logger:
+  level: VERY_VERBOSE
+  logs:
+    wifi: NONE
+    api.service: INFO
+    api.socket: INFO
+    scheduler: INFO
+    esp32.preferences: INFO
+    mdns: INFO
+    wifi_esp32: INFO
+    app: INFO
+
 esphome:
   project:
     name: esphome.m5stack-atom-s3r
     version: dev
   libraries:
     - M5Unified=https://github.com/m5stack/M5Unified#0.2.4
+  platformio_options:
+      build_flags: -DI2C_BUFFER_LENGTH=8193
 
 external_components:
   - source: components
 
 sensor:
-  - platform: m5stack_button_compound_sensor
-    m5stack_button_sensor_number:
-      name: Button State Number
-    m5stack_button_sensor_text:
-      name: Button State Text
+  # - platform: m5stack_button_compound_sensor
+  #   m5stack_button_sensor_number:
+  #     name: Button State Number
+  #   m5stack_button_sensor_text:
+  #     name: Button State Text
   - platform: bmi270
+    update_interval: 5s
     acceleration_x:
-      name: "BMI270 Accel X"
+      name: "IMU Accel X"
+    acceleration_y:
+      name: "IMU Accel Y"
+    acceleration_z:
+      name: "IMU Accel z"
+    gyroscope_x:
+      name: "IMU Gyro X"
+    gyroscope_y:
+      name: "IMU Gyro Y"
+    gyroscope_z:
+      name: "IMU Gyro z"
+    field_strength_x:
+      name: "IMU Mag X"
+    field_strength_y:
+      name: "IMU Mag Y"
+    field_strength_z:
+      name: "IMU Mag z"
+    temperature:
+      name: "IMU Temperature"
 
 # text_sensor:
 #   - platform: m5stack_button_text_sensor
@@ -90,6 +123,9 @@ binary_sensor:
 i2c:
   sda: 45
   scl: 0
+  scan: false # Disable I2C scan to speed up boot time
+  frequency: 400kHz
+  # timeout: 200us # doesn't work with idf
 
 light:
   - platform: monochromatic

@@ -10,6 +10,9 @@ from esphome.const import (
     CONF_GYROSCOPE_X,
     CONF_GYROSCOPE_Y,
     CONF_GYROSCOPE_Z,
+    CONF_FIELD_STRENGTH_X,
+    CONF_FIELD_STRENGTH_Y,
+    CONF_FIELD_STRENGTH_Z,
     DEVICE_CLASS_TEMPERATURE,
     STATE_CLASS_MEASUREMENT,
     UNIT_METER_PER_SECOND_SQUARED,
@@ -19,14 +22,16 @@ from esphome.const import (
     ICON_GYROSCOPE_X,
     ICON_GYROSCOPE_Y,
     ICON_GYROSCOPE_Z,
+    ICON_MAGNET,
     UNIT_DEGREE_PER_SECOND,
     UNIT_CELSIUS,
+    UNIT_MICROTESLA
 )
 
-DEPENDENCIES = ["i2c", "sensor"]
+DEPENDENCIES = ["i2c"]
 
-bmi270_sensor_ns = cg.esphome_ns.namespace("bmi270")
-BMI270Sensor = bmi270_sensor_ns.class_(
+bmi270_ns = cg.esphome_ns.namespace("bmi270")
+BMI270Sensor = bmi270_ns.class_(
     "BMI270Sensor", cg.PollingComponent, i2c.I2CDevice
 )
 
@@ -37,6 +42,11 @@ accel_schema = {
 }
 gyro_schema = {
     "unit_of_measurement": UNIT_DEGREE_PER_SECOND,
+    "accuracy_decimals": 2,
+    "state_class": STATE_CLASS_MEASUREMENT,
+}
+mag_schema = {
+    "unit_of_measurement": UNIT_MICROTESLA,
     "accuracy_decimals": 2,
     "state_class": STATE_CLASS_MEASUREMENT,
 }
@@ -69,6 +79,18 @@ CONFIG_SCHEMA = (
                 icon=ICON_GYROSCOPE_Z,
                 **gyro_schema,
             ),
+            cv.Optional(CONF_FIELD_STRENGTH_X): sensor.sensor_schema(
+                icon=ICON_MAGNET,
+                **mag_schema,
+            ),
+            cv.Optional(CONF_FIELD_STRENGTH_Y): sensor.sensor_schema(
+                icon=ICON_MAGNET,
+                **mag_schema,
+            ),
+            cv.Optional(CONF_FIELD_STRENGTH_Z): sensor.sensor_schema(
+                icon=ICON_MAGNET,
+                **mag_schema,
+            ),
             cv.Optional(CONF_TEMPERATURE): sensor.sensor_schema(
                 unit_of_measurement=UNIT_CELSIUS,
                 accuracy_decimals=0,
@@ -90,21 +112,17 @@ async def to_code(config):
     for d in ["x", "y", "z"]:
         key = f"acceleration_{d}"
         if key in config:
-            sens = await sensor.new_sensor(config[key])
-            cg.add(getattr(var, f"set_accel_{d}_sensor")(sens))
+          sens = await sensor.new_sensor(config[key])
+          cg.add(getattr(var, f"set_accel_{d}_sensor")(sens))
         key = f"gyroscope_{d}"
         if key in config:
-            sens = await sensor.new_sensor(config[key])
-            cg.add(getattr(var, f"set_gyro_{d}_sensor")(sens))
+          sens = await sensor.new_sensor(config[key])
+          cg.add(getattr(var, f"set_gyro_{d}_sensor")(sens))
+        key = f"field_strength_{d}"
+        if key in config:
+          sens = await sensor.new_sensor(config[key])
+          cg.add(getattr(var, f"set_mag_{d}_sensor")(sens))
 
     if CONF_TEMPERATURE in config:
-        sens = await sensor.new_sensor(config[CONF_TEMPERATURE])
-        cg.add(var.set_temperature_sensor(sens))
-
-    # cg.add_build_flag("-Ibmi270-sensor-api")
-
-    # cg.add_library(
-    #     "BMI270 Sensor API",
-    #     None,
-    #     f"https://github.com/DennisGaida/BMI270_SensorAPI.git",
-    # )
+      sens = await sensor.new_sensor(config[CONF_TEMPERATURE])
+      cg.add(var.set_temperature_sensor(sens))

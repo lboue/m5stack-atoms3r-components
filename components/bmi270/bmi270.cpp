@@ -6,11 +6,10 @@
 namespace esphome {
 namespace bmi270 {
 
-// #include "bmi270_config.inl"
-
 static const char *const TAG = "bmi270";
 
-static constexpr const uint8_t bmi270_config_file[] = {
+//see https://github.com/BoschSensortec/BMI270-Sensor-API/blob/master/bmi270.c
+static constexpr const uint8_t DEFAULT_CONFIGURATION[] = {
   0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0x3d, 0xb1, 0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0x91, 0x03, 0x80, 0x2e, 0xbc,
   0xb0, 0x80, 0x2e, 0xa3, 0x03, 0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0x00, 0xb0, 0x50, 0x30, 0x21, 0x2e, 0x59, 0xf5,
   0x10, 0x30, 0x21, 0x2e, 0x6a, 0xf5, 0x80, 0x2e, 0x3b, 0x03, 0x00, 0x00, 0x00, 0x00, 0x08, 0x19, 0x01, 0x00, 0x22,
@@ -446,6 +445,7 @@ static constexpr const uint8_t bmi270_config_file[] = {
 };
 
 // addresses - see https://github.com/m5stack/M5Unified/blob/master/src/utility/imu/BMI270_Class.hpp
+static constexpr const uint8_t CHIP_ID                 = 0x00;
 static constexpr const uint8_t CMD_REG_ADDR            = 0x7E;
 static constexpr const uint8_t PWR_CONF_ADDR           = 0x7C;
 static constexpr const uint8_t INIT_CTRL_ADDR          = 0x59;
@@ -468,8 +468,207 @@ static constexpr const uint8_t TEMPERATURE_0_ADDR      = 0x22;
 // commands
 static constexpr const uint8_t SOFT_RESET_CMD          = 0xB6;
 
+void BMI270Sensor::setup() {
+  enable_auxilliary_sensor_ = true;
+  this->internal_setup_(0);
+}
+
+void BMI270Sensor::internal_setup_(int stage, int retry) {
+  // see https://github.com/m5stack/M5Unified/blob/5d359529b05d2f92d9e91bcf09dbd47b722538d5/src/utility/imu/BMI270_Class.cpp#L35
+  // and https://github.com/boschsensortec/BMI270_SensorAPI/blob/4f0b6990dfa24130052d1713147c6f35a5d3a1da/bmi270.c#L1354
+
+  switch (stage) {
+    case 0: {
+      // check correct communication (chip_id needs to return 0x24)
+      ESP_LOGCONFIG(TAG, "Setting up BMI270 ...");
+      uint8_t chipid = 0;
+      if (this->read_byte(CHIP_ID, &chipid) && chipid != 0x24) {
+        ESP_LOGE(TAG, "Communication error. chipid=%02X", chipid);
+        this->mark_failed();
+      }
+
+      // perform soft-reset to bring all register values to default
+      ESP_LOGD(TAG, "Soft reset...");
+      // don't check whether this succeeds, as you will get i2c::ERROR_NOT_ACKNOWLEDGED 
+      this->write_register_(CMD_REG_ADDR, &SOFT_RESET_CMD);
+      
+      ESP_LOGV(TAG, "Waiting for successful soft reset ...");
+      // wait 2ms according to API, retry 3 times
+      // see https://github.com/boschsensortec/BMI270_SensorAPI/blob/4f0b6990dfa24130052d1713147c6f35a5d3a1da/bmi2.c#L2083C8-L2083C23
+      this->set_timeout(2, [this]() { this->internal_setup_(1, 3); });
+
+      break;
+    }
+    case 1: {
+      // power configuration
+      uint8_t power_conf;
+      ESP_LOGVV(TAG, "Waiting ... (retry: %d)", retry);
+      // check if PWR_CONF is not 0
+      if (!this->read_byte(PWR_CONF_ADDR, &power_conf) || retry == 0) {
+        ESP_LOGE(TAG, "Power config error. retry=%d", retry);
+        this->mark_failed();
+        return;
+      } else if (power_conf == 0 && retry != 0) {
+        this->set_timeout(0.25, [this, retry]() { this->internal_setup_(1, retry-1); });
+        break;
+      }
+
+      ESP_LOGD(TAG, "Soft reset sucessful (power_conf=%02X). Disabling advanced power save mode ...", power_conf); //power_conf default is 0x03
+      uint8_t power_save_disabled = 0x00;
+      write_register_(PWR_CONF_ADDR, &power_save_disabled); // disable advanced power save mode
+      // wait for minimum 450μs, waiting 500μs
+      this->set_timeout(0.5, [this]() { this->internal_setup_(2); });
+
+      break;
+    }
+    case 2: {
+      // load initial configuration
+      ESP_LOGV(TAG, "Prepare config load");
+      uint8_t init_ctrl = 0x00;
+      write_register_(INIT_CTRL_ADDR, &init_ctrl); // prepare config load
+      bool upload_succesful = _upload_file(DEFAULT_CONFIGURATION, sizeof(DEFAULT_CONFIGURATION)); // burst write to reg INIT_DATA start with byte 0
+      init_ctrl = 0x01;
+      write_register_(INIT_CTRL_ADDR, &init_ctrl); // complete config load
+      uint8_t int_map_data = 0xFF;
+      write_register_(INT_MAP_DATA_ADDR, &int_map_data, 1);
+
+      // return the IMU specification
+      if (!upload_succesful)
+      {
+        specification_ = imu_spec_none;
+        return;
+      }
+
+      //need to wait at least 20ms according to datasheet
+      this->set_timeout(20, [this, retry]() { this->internal_setup_(3, 9); });
+
+      break;
+    }
+    case 3: {
+      // check the correct initialization status (internal_status needs to return 1)
+      uint8_t internal_status = 0;
+
+      // check if internal_status is 1
+      if (!this->read_byte(INTERNAL_STATUS_ADDR, &internal_status) || retry == 0) {
+        ESP_LOGE(TAG, "Internal status error. retry=%d", retry);
+        this->mark_failed();
+        return;
+      } else if (internal_status != 1 && retry != 0) {
+        ESP_LOGVV(TAG, "internal_status: %d, retry: %d", internal_status, retry);
+        this->set_timeout(1, [this, retry]() { this->internal_setup_(3, retry-1); });
+        break;
+      }
+
+      specification_ = (imu_spec_t)(imu_spec_accel | imu_spec_gyro);
+      ESP_LOGD(TAG, "Config loaded successfully (internal_status: %d)", internal_status);
+
+      if (enable_auxilliary_sensor_) {
+        ESP_LOGD(TAG, "Enabling auxilliary sensor...");
+        this->internal_setup_auxilliary_sensor_(0);
+      } else {
+        this->setup_complete_ = true;
+        ESP_LOGCONFIG(TAG, "Setup complete without auxilliary sensor!");
+        ESP_LOGD(TAG, "IMU Spec: %d", specification_);
+      }
+
+      break;
+    }
+  }
+}
+
+void BMI270Sensor::internal_setup_auxilliary_sensor_(int stage, int retry) {
+  switch (stage) {
+    case 0: {
+
+      uint8_t reg_data;
+      this->read_byte(IF_CONF_ADDR, &reg_data);
+      ESP_LOGVV(TAG, "reg_data: %02X", reg_data);
+
+      // set up auxiliary sensor
+      uint8_t aux_i2c_enable = 0x20;
+      write_register_(IF_CONF_ADDR, &aux_i2c_enable); // AUX I2C enable.
+      uint8_t pwr_save_disable = 0x00;
+      write_register_(PWR_CONF_ADDR, &pwr_save_disable); // Power save disabled.
+      uint8_t aux_sensor_disable = 0x0E;
+      write_register_(PWR_CTRL_ADDR, &aux_sensor_disable); // Power save disabled.
+      uint8_t aux_if_conf = 0x80;
+      write_register_(AUX_IF_CONF_ADDR, &aux_if_conf);
+      uint8_t ic2_add_op = auxilliary_sensor_address_ << 1;  // 0x10 = BMM150 I2C Addr
+      write_register_(AUX_DEV_ID_ADDR, &ic2_add_op);
+
+      // aux software reset & power on
+      uint8_t aux_swreset = 0x83;
+      write_register_(AUX_WR_DATA_ADDR, &aux_swreset);
+      uint8_t aux_register = 0x4B;
+      write_register_(AUX_WR_ADDR, &aux_register);
+
+      this->internal_setup_auxilliary_sensor_(1, 3);
+
+      break;
+    }
+    case 1: {
+      // check if the auxiliary sensor is correctly set up
+      this->checkStatus( retry, [this, retry](bool success) {
+        if (!success) {
+          ESP_LOGW(TAG, "Auxiliary status error. retry=%d", retry);
+          this->status_set_warning();
+          return;
+        }
+
+        uint8_t aux_enable_rw = 0x80;
+        write_register_(AUX_IF_CONF_ADDR, &aux_enable_rw); // enable read write
+        uint8_t aux_read_address = 0x40;
+        write_register_(AUX_RD_ADDR, &aux_read_address); // register number to read from AUX sensor
+
+        this->internal_setup_auxilliary_sensor_(2);
+      });
+      
+      break;
+    }
+    case 2: {
+      uint8_t whoami = 0;
+      if (this->read_byte(AUX_X_LSB_ADDR, &whoami) && whoami == 0x32) {
+        // aux normal mode / ODR 30Hz
+        uint8_t normal_mode = 0x38;
+        write_register_(AUX_WR_DATA_ADDR, &normal_mode);
+        uint8_t aux_register = 0x4C;
+        write_register_(AUX_WR_ADDR, &aux_register);
+
+        this->internal_setup_auxilliary_sensor_(3, 3);
+      }
+
+      break;
+    }
+    case 3: {
+      this->checkStatus( retry, [this, retry](bool success) {
+        if (!success) {
+          ESP_LOGW(TAG, "Auxiliary status error. retry=%d", retry);
+          this->status_set_warning();
+          return;
+        }
+
+        specification_ = (imu_spec_t)(imu_spec_accel | imu_spec_gyro | imu_spec_mag);
+        uint8_t fcu_write_en = 0x4F;
+        write_register_(AUX_IF_CONF_ADDR, &fcu_write_en); // FCU_WRITE_EN + Manual BurstLength 8 + BurstLength 8
+        uint8_t bmm150_data_lsb = 0x42;
+        write_register_(AUX_RD_ADDR, &bmm150_data_lsb);  // 0x42 = BMM150 I2C Data X LSB reg
+        uint8_t temp_en = 0x0F;
+        write_register_(PWR_CTRL_ADDR, &temp_en); // temp en | ACC en | GYR en | AUX en
+        
+
+        this->setup_complete_ = true;
+        ESP_LOGCONFIG(TAG, "Setup complete!");
+        ESP_LOGD(TAG, "IMU Spec: %d", specification_);
+
+        return;
+      });
+    }
+  }
+}
+
 bool BMI270Sensor::_upload_file(const uint8_t *config_data, size_t write_len)
 {
+  ESP_LOGV(TAG, "Uploading config (size=%d)...", write_len);
   size_t index = 0;
   uint8_t addr_array[2] = {
     (uint8_t)((index >> 1) & 0x0F),
@@ -477,145 +676,101 @@ bool BMI270Sensor::_upload_file(const uint8_t *config_data, size_t write_len)
   };
 
   if (config_data != nullptr
-    && this->write_register_( INIT_ADDR_0, addr_array, 2 ))
-    // && this->write_register_( INIT_DATA_ADDR, config_data, write_len))
+    && this->write_register_( INIT_ADDR_0, addr_array, 2 )
+    && this->write_register_( INIT_DATA_ADDR, (uint8_t *)config_data, write_len))
   {
     return true;
   }
   return true;
 }
 
-BMI270Sensor::imu_spec_t BMI270Sensor::internal_setup_() {
-  // initialization like https://github.com/m5stack/M5Unified/blob/5d359529b05d2f92d9e91bcf09dbd47b722538d5/src/utility/imu/BMI270_Class.cpp#L36
+// bool BMI270Sensor::auxSetupMode(uint8_t i2c_addr)
+// {
+//   uint8_t aux_i2c_enable = 0x01;
+//   write_register_(IF_CONF_ADDR, &aux_i2c_enable); // AUX I2C enable.
+//   uint8_t pwr_save_disable = 0x00;
+//   write_register_(PWR_CONF_ADDR, &pwr_save_disable); // Power save disabled.
+//   uint8_t aux_sensor_disable = 0x0E;
+//   write_register_(PWR_CTRL_ADDR, &aux_sensor_disable); // Power save disabled.
+//   uint8_t aux_if_conf = 0x80;
+//   write_register_(AUX_IF_CONF_ADDR, &aux_if_conf);
+//   uint8_t ic2_add_op = i2c_addr << 1;
+//   return write_register_(AUX_DEV_ID_ADDR, &ic2_add_op);
+// }
 
-  this->write_register_(CMD_REG_ADDR, &SOFT_RESET_CMD); // software reset.
-  {
-    int retry = 16;
-    uint8_t data = 0;
-    do {
-      delay(1);
-      //todo: replace with internal method
-      this->read_register(PWR_CONF_ADDR, &data, 1, true);
-      ESP_LOGD(TAG, "PWR_CONF_ADDR: %d", data);
-    }
-    while (data == 0 && --retry);
+void BMI270Sensor::checkStatus(int retry, StatusCallback callback) {
+  uint8_t status = 0;
+
+  if (!this->read_byte(STATUS_ADDR, &status) || retry == 0) {
+    ESP_LOGW(TAG, "Status error. retry=%d", retry);
+    this->status_set_warning();
+    callback(false);
+    return;
+  } else if (status & 0b100 && retry != 0) { //checks whether the third bit of data is set
+    ESP_LOGVV(TAG, "Current status: %02X", status);
+    this->set_timeout(1, [this, retry, callback]() { this->checkStatus(retry-1, callback); });
+    return;
   }
-
-  uint8_t power_save_disabled = 0x00;
-  write_register_(PWR_CONF_ADDR, &power_save_disabled); // Power save disabled.
-  delay(1);
-  bool res = _upload_file(bmi270_config_file, sizeof(bmi270_config_file));
-  uint8_t init_ctrl = 0x01;
-  write_register_(INIT_CTRL_ADDR, &init_ctrl);
-  uint8_t int_map_data = 0xFF;
-  write_register_(INT_MAP_DATA_ADDR, &int_map_data, 1);
-
-  // // return the IMU specification
-  // // Begin AUX
-  // if (!res)
-  // {
-  //   return imu_spec_none;
-  // }
-
-  imu_spec_t spec = (imu_spec_t)(imu_spec_accel | imu_spec_gyro);
-  int retry = 16;
-  uint8_t data = 0;
-  do {
-    delay(1);
-    //todo: replace with internal method
-    this->read_register(INTERNAL_STATUS_ADDR, &data, 1, true);
-    ESP_LOGD(TAG, "INTERNAL_STATUS_ADDR: %d", data);
-  }
-  while (0 == data && --retry);
-  res = retry > 0;
-
-  auxSetupMode(0x10); // 0x10 = BMM150 I2C Addr
-  auxWriteRegister8(0x4B, 0x83); // software reset + power on
-  auxReadRegister8(0x40); // 0x40 = WhoAmI
-
-  auxWriteRegister8(0x4C, 0x38); // normal mode / ODR 30Hz
-  spec = (imu_spec_t)(imu_spec_accel | imu_spec_gyro | imu_spec_mag);
-  uint8_t fcu_write_en = 0x4F;
-  write_register_(AUX_IF_CONF_ADDR, &fcu_write_en); // FCU_WRITE_EN + Manual BurstLength 8 + BurstLength 8
-  uint8_t bmm150_data_lsb = 0x42;
-  write_register_(AUX_RD_ADDR, &bmm150_data_lsb);  // 0x42 = BMM150 I2C Data X LSB reg
-  uint8_t temp_en = 0x0F;
-  write_register_(PWR_CTRL_ADDR, &temp_en); // temp en | ACC en | GYR en | AUX en
-
-  return spec;
-
-
-  ESP_LOGD(TAG, "We did it all!");
-
-  this->setup_complete_ = true;
+  callback(true);
 }
 
-bool BMI270Sensor::auxSetupMode(uint8_t i2c_addr)
-{
-  uint8_t aux_i2c_enable = 0x01;
-  write_register_(IF_CONF_ADDR, &aux_i2c_enable); // AUX I2C enable.
-  uint8_t pwr_save_disable = 0x00;
-  write_register_(pwr_save_disable, &pwr_save_disable); // Power save disabled.
-  uint8_t aux_sensor_disable = 0x0E;
-  write_register_(PWR_CTRL_ADDR, &aux_sensor_disable); // Power save disabled.
-  uint8_t aux_if_conf = 0x80;
-  write_register_(AUX_IF_CONF_ADDR, &aux_if_conf);
-  uint8_t ic2_add_op = i2c_addr << 1;
-  return write_register_(AUX_DEV_ID_ADDR, &ic2_add_op);
-}
+// bool BMI270Sensor::auxWriteRegister8(uint8_t reg, uint8_t data)
+// {
+//   write_register_(AUX_WR_DATA_ADDR, &data); // Value to write to AUX sensor
+//   write_register_(AUX_WR_ADDR, &reg);       // Register number to write to AUX sensor
+//   int retry = 3;
+//   data = 0;
+//   do {
+//     vTaskDelay(1);
+//     //todo: replace with internal method
+//     this->read_register(STATUS_ADDR, &data, 1, true);
+//     ESP_LOGD(TAG, "STATUS_ADDR: %d", data);
+//   }
+//   while (data & 0b100 && --retry); //checks whether the third bit of data is set
 
-bool BMI270Sensor::auxWriteRegister8(uint8_t reg, uint8_t data)
-{
-  write_register_(AUX_WR_DATA_ADDR, &data); // Power save disabled.
+//   return retry;
+// }
 
-  write_register_(AUX_WR_DATA_ADDR, &data); // Value to write to AUX sensor
-  write_register_(AUX_WR_ADDR, &reg);       // Register number to write to AUX sensor
-  int retry = 3;
-  data = 0;
-  do {
-    delay(1);
-    //todo: replace with internal method
-    this->read_register(STATUS_ADDR, &data, 1, true);
-    ESP_LOGD(TAG, "STATUS_ADDR: %d", data);
-  }
-  while (data & 0b100 && --retry); //checks whether the third bit of data is set
+// uint8_t BMI270Sensor::auxReadRegister8(uint8_t reg)
+// {
+//   uint8_t aux_enable_rw = 0x80;
+//   write_register_(AUX_IF_CONF_ADDR, &aux_enable_rw); // enable read write. Burst length 1
+//   write_register_(AUX_RD_ADDR, &reg);                // register number to read from AUX sensor
+//   int retry = 3;
+//   uint8_t data = 0;
+//   do {
+//     vTaskDelay(1);
+//     //todo: replace with internal method
+//     this->read_register(STATUS_ADDR, &data, 1, true);
+//     ESP_LOGD(TAG, "STATUS_ADDR: %d", data);
+//   }
+//   while (data & 0b100 && --retry);
 
-  return retry;
-}
-
-uint8_t BMI270Sensor::auxReadRegister8(uint8_t reg)
-{
-  uint8_t aux_enable_rw = 0x80;
-  write_register_(AUX_IF_CONF_ADDR, &aux_enable_rw); // enable read write. Burst length 1
-  write_register_(AUX_RD_ADDR, &reg);                // register number to read from AUX sensor
-  int retry = 3;
-  uint8_t data = 0;
-  do {
-    delay(1);
-    //todo: replace with internal method
-    this->read_register(STATUS_ADDR, &data, 1, true);
-    ESP_LOGD(TAG, "STATUS_ADDR: %d", data);
-  }
-  while (data & 0b100 && --retry);
-
-  return read_register(AUX_X_LSB_ADDR, &data, 1, true);
-}
+//   return read_register(AUX_X_LSB_ADDR, &data, 1, true);
+// }
 
 BMI270Sensor::imu_spec_t BMI270Sensor::getImuRawData(imu_raw_data_t *data)
 {
   imu_spec_t res = imu_spec_none;
   uint8_t intstat = 0;
   this->read_register(INT_STATUS_1_ADDR, &intstat, 1, true);
+  ESP_LOGVV(TAG, "intstat: %02X", intstat);
   if (intstat & 0xE0)
   {
     std::int16_t buf[10];
-    if (this->read_register(AUX_X_LSB_ADDR, (std::uint8_t*)&buf, 20, true))
+    auto buffer = this->read_register(AUX_X_LSB_ADDR, (std::uint8_t*)&buf, 20, true);
+    ESP_LOGVV(TAG, "buf: %02X, buffer: %02X", buf, buffer);
+
+    //TODO: Acceleration & Gyro are switched (!), though the following does it like this
+    //   https://github.com/m5stack/M5Unified/blob/5d359529b05d2f92d9e91bcf09dbd47b722538d5/src/utility/imu/BMI270_Class.cpp#L130
+    if (buffer == esphome::i2c::NO_ERROR)
     {
       if (intstat & 0x80u)
       {
         data->accel.x = buf[4];
         data->accel.y = buf[5];
         data->accel.z = buf[6];
+        ESP_LOGVV(TAG, "accelX: %02X", buf[4]);
         res = (imu_spec_t)(res | imu_spec_accel);
       }
       if (intstat & 0x40u)
@@ -623,6 +778,7 @@ BMI270Sensor::imu_spec_t BMI270Sensor::getImuRawData(imu_raw_data_t *data)
         data->gyro.x = buf[7];
         data->gyro.y = buf[8];
         data->gyro.z = buf[9];
+        ESP_LOGVV(TAG, "gyroX: %02X", buf[7]);
         res = (imu_spec_t)(res | imu_spec_gyro);
       }
       if (intstat & 0x20u)
@@ -630,29 +786,56 @@ BMI270Sensor::imu_spec_t BMI270Sensor::getImuRawData(imu_raw_data_t *data)
         data->mag.x = buf[0] >> 2;
         data->mag.y = buf[1] >> 2;
         data->mag.z = buf[2] & 0xFFFE;
+        ESP_LOGVV(TAG, "magX: %02X", buf[0]);
         res = (imu_spec_t)(res | imu_spec_mag);
       }
     }
   }
+  ESP_LOGVV(TAG, "imu returned spec: %02X", res);
   return res;
 }
 
-void BMI270Sensor::getConvertParam(imu_convert_param_t *param)
-{
-  param->mag_res = 10.0f * 4912.0f / 32760.0f;
-  param->temp_offset = 23.0f;
-  param->temp_res = 1.0f / 512.0f;
+
+void BMI270Sensor::getImuData(imu_data_t *data) {
+  imu_spec_t spec = getImuRawData(&raw_data_);
+
+  // TODO:
+  // - not sure about the conversions
+  //   https://github.com/m5stack/M5Unified/blob/5d359529b05d2f92d9e91bcf09dbd47b722538d5/src/utility/IMU_Class.cpp#L446
+  //   does multiply with (1.0f / 65536.0f), but the commented code does not:
+  //   https://github.com/m5stack/M5Unified/blob/5d359529b05d2f92d9e91bcf09dbd47b722538d5/src/utility/imu/BMI270_Class.cpp#L172
+  // - Missing the complete part about offsets and calibration
+  if (spec != imu_spec_none) {
+    if (spec & imu_spec_accel) {
+      data->accel.x = raw_data_.accel.x * convert_param_.accel_res;
+      data->accel.y = raw_data_.accel.y * convert_param_.accel_res;
+      data->accel.z = raw_data_.accel.z * convert_param_.accel_res;
+    }
+    if (spec & imu_spec_gyro) {
+      data->gyro.x = raw_data_.gyro.x * convert_param_.gyro_res;
+      data->gyro.y = raw_data_.gyro.y * convert_param_.gyro_res;
+      data->gyro.z = raw_data_.gyro.z * convert_param_.gyro_res;
+    }
+    if (spec & imu_spec_mag) {
+      data->mag.x = raw_data_.mag.x * convert_param_.mag_res;
+      data->mag.y = raw_data_.mag.y * convert_param_.mag_res;
+      data->mag.z = raw_data_.mag.z * convert_param_.mag_res;
+    }
+  }
 }
 
-bool BMI270Sensor::getTemp(int16_t *t)
+bool BMI270Sensor::getTemp(float *t)
 {
-  std::int16_t buf;
-  bool res = this->read_register(TEMPERATURE_0_ADDR, (std::uint8_t*)&buf, 2, true);
-  if (res) { *t = buf; }
+  std::int16_t temp;
+  bool res = this->read_register(TEMPERATURE_0_ADDR, (std::uint8_t*)&temp, 2, true);
+  ESP_LOGVV(TAG, "raw temp: %02X",temp);
+  if (res == esphome::i2c::NO_ERROR) {
+    *t = temp * convert_param_.temp_res + convert_param_.temp_offset;
+    ESP_LOGVV(TAG, "t: %.3f°C", *t);
+  }
   return res;
 }
 
-void BMI270Sensor::setup() { this->internal_setup_(); }
 void BMI270Sensor::dump_config() {
   ESP_LOGCONFIG(TAG, "BMI270:");
   LOG_I2C_DEVICE(this);
@@ -697,7 +880,7 @@ bool BMI270Sensor::write_register_(uint8_t reg, const uint8_t *value, size_t len
   this->last_error_ = this->write_register(reg, value, len, true);
   if (this->last_error_ != i2c::ERROR_OK) {
     this->status_set_warning("I2C I/O error");
-    ESP_LOGE(TAG, "write_register_(): I2C I/O error: Reg=0x%02X, Err=%d", reg, (int) this->last_error_);
+    ESP_LOGE(TAG, "write_register_(): I2C I/O error: Reg=0x%02X, Err=%s", reg, this->last_error_);
     return false;
   }
 
@@ -711,47 +894,59 @@ void BMI270Sensor::update() {
   }
 
   ESP_LOGV(TAG, "    Updating BMI270...");
-  // int16_t data[6];
-  // if (this->read_le_int16_(BMI270_REGISTER_DATA_GYRO_X_LSB, data, 6) != i2c::ERROR_OK) {
-  //   this->status_set_warning();
-  //   return;
-  // }
 
-  // float gyro_x = (float) data[0] / (float) INT16_MAX * 2000.f;
-  // float gyro_y = (float) data[1] / (float) INT16_MAX * 2000.f;
-  // float gyro_z = (float) data[2] / (float) INT16_MAX * 2000.f;
-  // float accel_x = (float) data[3] / (float) INT16_MAX * 16 * GRAVITY_EARTH;
-  // float accel_y = (float) data[4] / (float) INT16_MAX * 16 * GRAVITY_EARTH;
-  // float accel_z = (float) data[5] / (float) INT16_MAX * 16 * GRAVITY_EARTH;
+  float temperature;
+  if (getTemp(&temperature)) {
+    ESP_LOGVV(TAG, "temperature: %.1f°C", temperature);
+  }
+    
+  BMI270Sensor::imu_data_t data;
+  getImuData(&data);
+  
+  float gyro_x = (float) data.gyro.x;
+  float gyro_y = (float) data.gyro.y;
+  float gyro_z = (float) data.gyro.z;
+  float accel_x = (float) data.accel.x;
+  float accel_y = (float) data.accel.y;
+  float accel_z = (float) data.accel.z;
+  float mag_x = (float) data.mag.x;
+  float mag_y = (float) data.mag.y;
+  float mag_z = (float) data.mag.z;
 
-  // int16_t raw_temperature;
-  // if (this->read_le_int16_(BMI270_REGISTER_DATA_TEMP_LSB, &raw_temperature, 1) != i2c::ERROR_OK) {
-  //   this->status_set_warning();
-  //   return;
-  // }
-  // float temperature = (float) raw_temperature / (float) INT16_MAX * 64.5f + 23.f;
+  ESP_LOGD(TAG,
+    "Got accel={x=%.3f m/s², y=%.3f m/s², z=%.3f m/s²}, "
+    "gyro={x=%.3f °/s, y=%.3f °/s, z=%.3f °/s}, "
+    "mag={x=%.3f m/s², y=%.3f m/s², z=%.3f m/s²}, "
+    "temp=%.1f°C",
+    accel_x, accel_y, accel_z,
+    gyro_x, gyro_y, gyro_z, 
+    mag_x, mag_y, mag_z,
+    temperature);
 
-  // ESP_LOGD(TAG,
-  //          "Got accel={x=%.3f m/s², y=%.3f m/s², z=%.3f m/s²}, "
-  //          "gyro={x=%.3f °/s, y=%.3f °/s, z=%.3f °/s}, temp=%.3f°C",
-  //          accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, temperature);
 
-  // if (this->accel_x_sensor_ != nullptr)
-  //   this->accel_x_sensor_->publish_state(accel_x);
-  // if (this->accel_y_sensor_ != nullptr)
-  //   this->accel_y_sensor_->publish_state(accel_y);
-  // if (this->accel_z_sensor_ != nullptr)
-  //   this->accel_z_sensor_->publish_state(accel_z);
+  if (this->accel_x_sensor_ != nullptr)
+    this->accel_x_sensor_->publish_state(accel_x);
+  if (this->accel_y_sensor_ != nullptr)
+    this->accel_y_sensor_->publish_state(accel_y);
+  if (this->accel_z_sensor_ != nullptr)
+    this->accel_z_sensor_->publish_state(accel_z);
 
-  // if (this->temperature_sensor_ != nullptr)
-  //   this->temperature_sensor_->publish_state(temperature);
+  if (this->gyro_x_sensor_ != nullptr)
+    this->gyro_x_sensor_->publish_state(gyro_x);
+  if (this->gyro_y_sensor_ != nullptr)
+    this->gyro_y_sensor_->publish_state(gyro_y);
+  if (this->gyro_z_sensor_ != nullptr)
+    this->gyro_z_sensor_->publish_state(gyro_z);
 
-  // if (this->gyro_x_sensor_ != nullptr)
-  //   this->gyro_x_sensor_->publish_state(gyro_x);
-  // if (this->gyro_y_sensor_ != nullptr)
-  //   this->gyro_y_sensor_->publish_state(gyro_y);
-  // if (this->gyro_z_sensor_ != nullptr)
-  //   this->gyro_z_sensor_->publish_state(gyro_z);
+  if (this->mag_x_sensor_ != nullptr)
+    this->mag_x_sensor_->publish_state(mag_x);
+  if (this->mag_y_sensor_ != nullptr)
+    this->mag_y_sensor_->publish_state(mag_y);
+  if (this->mag_z_sensor_ != nullptr)
+    this->mag_z_sensor_->publish_state(mag_z);
+
+  if (this->temperature_sensor_ != nullptr)
+    this->temperature_sensor_->publish_state(temperature);
 
   this->status_clear_warning();
 }
