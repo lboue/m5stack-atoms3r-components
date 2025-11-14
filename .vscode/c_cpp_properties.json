@@ -56,7 +56,14 @@
               ""
           ],
           "cStandard": "gnu17",
-          "cppStandard": "gnu++17"
+          "cppStandard": "gnu++17",
+          "compilerPath": "${userHome}/.platformio/packages/toolchain-xtensa/bin/xtensa-lx106-elf-gcc",
+          "compilerArgs": [
+                "-mlongcalls",
+                "-mtext-section-literals",
+                ""
+         ]
+          
       }
   ],
   "version": 4
