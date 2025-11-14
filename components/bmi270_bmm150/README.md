@@ -1,6 +1,6 @@
 # BMI270_BMM150 componant
 
-The  BMI270_BMM150 componant reports:
+The `BMI270_BMM150` componant reports:
  * Accelerometer range is set at [-4, +4]g -/+0.122 mg.
  * Gyroscope range is set at [-2000, +2000] dps +/-70 mdps.
  * Magnetometer range is set at [-400, +400] uT +/-0.014 uT.
@@ -53,3 +53,4 @@ sensor:
     #temperature:
     #  name: "IMU Temperature"
 ```
+
