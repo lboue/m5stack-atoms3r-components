@@ -4,5 +4,12 @@
   },
   "[esphome]": {
       
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.venv": true,
+    "**/.esphome": true,
+    "**/*.pyc": true,
+    "**/__pycache__": true
   }
 }
