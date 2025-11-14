@@ -1,2 +1,4 @@
 wheel
 esphome
+cairosvg
+cairocffi

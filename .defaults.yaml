@@ -39,3 +39,12 @@ ota:
     password: !secret ota_password
   - platform: http_request
     id: ota_http_request
+
+# mqtt:
+#   broker: !secret mqtt_address
+#   port: !secret mqtt_port
+#   username: !secret mqtt_username
+#   password: !secret mqtt_password
+#   topic_prefix: null
+#   discovery: False
+#   discover_ip: False
