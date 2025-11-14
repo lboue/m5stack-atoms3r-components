@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "options": {
     "env": {
-         "COM_PORT": "COM5"
+      "COM_PORT": "COM5"
     }
   },
   "tasks": [
@@ -75,12 +75,42 @@
       "problemMatcher": []
     },
     {
+      "label": "Upload & Logs",
+      "type": "shell",
+      "dependsOn": [
+        "Upload"
+      ],
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "logs",
+        ".\\m5stack-atom-s3r.yaml",
+        "--device",
+        "$env:COM_PORT"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Config",
       "type": "shell",
       "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
       "args": [
         "config",
         ".\\m5stack-atom-s3r.yaml"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Run (OTA)",
+      "type": "shell",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\esphome.exe",
+      "args": [
+        "run",
+        ".\\m5stack-atom-s3r.yaml",
+        "--device OTA"
       ],
       "problemMatcher": []
     }
