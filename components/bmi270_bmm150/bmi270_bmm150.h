@@ -5,9 +5,9 @@
 #include "esphome/components/i2c/i2c.h"
 
 namespace esphome {
-namespace bmi270 {
+namespace bmi270_bmm150 {
 
-class BMI270Sensor : public PollingComponent, public i2c::I2CDevice {
+class BMI270BMM150Sensor : public PollingComponent, public i2c::I2CDevice {
   public:
     enum imu_spec_t
     {
@@ -150,5 +150,5 @@ class BMI270Sensor : public PollingComponent, public i2c::I2CDevice {
     imu_convert_param_t convert_param_;
 };
 
-}  // namespace bmi270
+}  // namespace bmi270_bmm150
 }  // namespace esphome

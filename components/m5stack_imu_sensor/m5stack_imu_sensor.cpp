@@ -7,8 +7,6 @@ namespace m5stack_imu_sensor {
 
 static const char *const TAG = "m5stack_imu_sensor.sensor";
 
-const float GRAVITY_EARTH = 9.80665f;
-
 void M5StackIMUSensor::setup() {
   M5.begin();
 }

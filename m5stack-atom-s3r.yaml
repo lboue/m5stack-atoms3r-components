@@ -10,17 +10,19 @@ substitutions:
   board: esp32-s3-devkitc-1                # ESP32 board
   framework_type: arduino                  # ESP32 framework
 
-logger:
-  level: VERY_VERBOSE
-  logs:
-    wifi: NONE
-    api.service: INFO
-    api.socket: INFO
-    scheduler: INFO
-    esp32.preferences: INFO
-    mdns: INFO
-    wifi_esp32: INFO
-    app: INFO
+# logger:
+#   level: VERY_VERBOSE
+#   logs:
+#     wifi: NONE
+#     api.service: INFO
+#     api.socket: INFO
+#     scheduler: INFO
+#     esp32.preferences: INFO
+#     mdns: INFO
+#     wifi_esp32: INFO
+#     app: INFO
+#     ili9xxx: INFO
+#     ic2: INFO
 
 esphome:
   project:
@@ -34,40 +36,53 @@ esphome:
 external_components:
   - source: components
 
-sensor:
-  # - platform: m5stack_button_compound_sensor
-  #   m5stack_button_sensor_number:
-  #     name: Button State Number
-  #   m5stack_button_sensor_text:
-  #     name: Button State Text
-  - platform: bmi270
-    update_interval: 5s
-    acceleration_x:
-      name: "IMU Accel X"
-    acceleration_y:
-      name: "IMU Accel Y"
-    acceleration_z:
-      name: "IMU Accel z"
-    gyroscope_x:
-      name: "IMU Gyro X"
-    gyroscope_y:
-      name: "IMU Gyro Y"
-    gyroscope_z:
-      name: "IMU Gyro z"
-    field_strength_x:
-      name: "IMU Mag X"
-    field_strength_y:
-      name: "IMU Mag Y"
-    field_strength_z:
-      name: "IMU Mag z"
-    temperature:
-      name: "IMU Temperature"
 
-# text_sensor:
+### Specific instructions for the M5Stack AtomS3R board
+
+# sensor:
+#   # - platform: m5stack_button_compound_sensor
+#   #   m5stack_button_sensor_number:
+#   #     name: Button State Number
+#   #   m5stack_button_sensor_text:
+#   #     name: Button State Text
+#   - platform: bmi270_bmm150
+#     update_interval: 5s
+#     acceleration_x:
+#       name: "IMU Accel X"
+#     acceleration_y:
+#       name: "IMU Accel Y"
+#     acceleration_z:
+#       name: "IMU Accel z"
+#     gyroscope_x:
+#       name: "IMU Gyro X"
+#     gyroscope_y:
+#       name: "IMU Gyro Y"
+#     gyroscope_z:
+#       name: "IMU Gyro z"
+#     field_strength_x:
+#       name: "IMU Mag X"
+#     field_strength_y:
+#       name: "IMU Mag Y"
+#     field_strength_z:
+#       name: "IMU Mag z"
+#     temperature:
+#       name: "IMU Temperature"
+
+text_sensor:
 #   - platform: m5stack_button_text_sensor
 #     name: Button State Text
-
-### Specfic instructions for the M5Stack AtomS3R board
+  # - platform: mqtt_subscribe
+  #   name: "Teams Presence"
+  #   id: teams_status
+  #   topic: sensor/teams_status
+  # - platform: mqtt_subscribe
+  #   name: "Teams Call Status"
+  #   id: teams_call
+  #   topic: homeassistant/sensor/teams_call
+  - platform: homeassistant
+    name: "Teams Status"
+    entity_id: sensor.teams_status
+    id: teams_status
 
 # sensor:
 #   - platform: m5stack_imu_sensor
@@ -97,6 +112,7 @@ sensor:
 binary_sensor:
   - platform: gpio
     name: Button
+    id: main_button
     pin:
       number: 41
       inverted: true
@@ -116,6 +132,18 @@ binary_sensor:
         - ON for at least 1s
         then:
           - logger.log: binary_sensor button hold
+  - platform: homeassistant
+    name: "Teams In Call"
+    entity_id: binary_sensor.teams_in_call
+    id: teams_in_call
+  - platform: homeassistant
+    name: "Webcam Active"
+    entity_id: binary_sensor.3zrttq3_3zrttq3_webcamactive
+    id: webcam_active
+  # - platform: homeassistant
+  #   name: "PC Muted"
+  #   entity_id: binary_sensor.pc_muted
+  #   id: pc_muted
 
 # I2C Addresses:
 #   0x30 = LP5562 / Display Backlight
@@ -158,21 +186,99 @@ display:
     dc_pin: 42
     reset_pin: 48
     invert_colors: true   # black bg, white text
-    rotation: 180         # 180 = cable is bottom
+    rotation: 0           # 180 = cable is bottom, 90 = cable is left
     lambda: |-
-      it.strftime(64, 0, id(font_default), id(my_red), TextAlign::TOP_CENTER, "%H:%M", id(ha_time).now());
+      const char* state = id(teams_status).state.c_str();
+      bool is_in_call = id(teams_in_call).state;
+      bool is_webcam_active = id(webcam_active).state;
+      bool is_button_click = id(main_button).state;
+      if (strcmp(state, "Available") == 0 || strcmp(state, "Away") == 0 || strcmp(state, "Unknown") == 0 || strcmp(state, "Offline") == 0 || (strcmp(state, "Busy") == 0 && !is_in_call)) {
+        it.filled_rectangle(0, 0, it.get_width(), 40, id(green));
+        if (strcmp(state, "Busy") == 0 && !is_in_call) {
+          it.image(128, 0, id(calendar), ImageAlign::TOP_RIGHT, id(red), id(green));
+          it.print(it.get_width()/2-5, 0, id(font_default), TextAlign::TOP_CENTER, "Free");
+        } else {
+          it.print(it.get_width()/2, 0, id(font_default), TextAlign::TOP_CENTER, "Free");
+        }
+        if (!is_webcam_active) {
+          it.image(it.get_width()/2, it.get_height()/2-7, id(camera_off), ImageAlign::CENTER_HORIZONTAL);
+        } else {
+          it.image(it.get_width()/2, it.get_height()/2-7, id(camera), ImageAlign::CENTER_HORIZONTAL, id(red));
+        }
+      } else if (strcmp(state, "Busy") == 0 && is_in_call) {
+        it.filled_rectangle(0, 0, it.get_width(), 40, id(red));
+        it.print(it.get_width()/2, 0, id(font_default), TextAlign::TOP_CENTER, "Meeting");
+        if (!is_webcam_active) {
+          it.image(it.get_width()/2, it.get_height()/2-7, id(camera_off), ImageAlign::CENTER_HORIZONTAL);
+        } else {
+          it.image(it.get_width()/2, it.get_height()/2-7, id(camera), ImageAlign::CENTER_HORIZONTAL, id(red));
+        }
+      } else if (strcmp(state, "Do Not Disturb") == 0) {
+        it.filled_rectangle(0, 0, it.get_width(), 40, id(pink));
+        it.print(it.get_width()/2, 0, id(font_default), TextAlign::TOP_CENTER, "Meeting");
+        if (!is_webcam_active) {
+          it.image(it.get_width()/2, it.get_height()/2-7, id(camera_off), ImageAlign::CENTER_HORIZONTAL);
+        } else {
+          it.image(it.get_width()/2, it.get_height()/2-7, id(camera), ImageAlign::CENTER_HORIZONTAL, id(red));
+        }
+      } else {
+        it.printf(0, 0, id(font_mini), id(grey), "state: %s", state);
+        it.printf(0, 8, id(font_mini), id(grey), "in_call: %s", is_in_call ? "true" : "false");
+        it.printf(0, 16, id(font_mini), id(grey), "cam_active: %s", is_webcam_active ? "true" : "false");
+        it.printf(0, 24, id(font_mini), id(grey), "button_click: %s", is_button_click ? "true" : "false");
+        it.printf(it.get_width()/2, it.get_height()/2-10, id(font_small), TextAlign::TOP_CENTER, "Loading...");
+      }
+      it.strftime(128, 128, id(font_small), id(white), TextAlign::BOTTOM_RIGHT, "%H:%M", id(ha_time).now());
 
 font:
   - file: "gfonts://Roboto"
     id: font_default
-    size: 36
+    size: 32
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 16
+  - file: "gfonts://Roboto"
+    id: font_mini
+    size: 10
+
+image:
+  - file: mdi:camera
+    type: grayscale
+    transparency: alpha_channel
+    id: camera
+    resize: 40x40
+  - file: mdi:camera-off
+    type: grayscale
+    transparency: alpha_channel
+    id: camera_off
+    resize: 40x40
+  - file: mdi:calendar
+    type: grayscale
+    transparency: alpha_channel
+    id: calendar
+    resize: 20x20
 
 color:
-  - id: my_red
+  - id: red
     red: 100%
     green: 20%
     blue: 25%
-    white: 0%
+  - id: green
+    red: 0%
+    green: 80%
+    blue: 5%
+  - id: white
+    red: 100%
+    green: 100%
+    blue: 100%
+  - id: grey
+    red: 40%
+    green: 40%
+    blue: 40%
+  - id: pink
+    red: 70%
+    green: 0%
+    blue: 70%
 
 time:
   platform: homeassistant
